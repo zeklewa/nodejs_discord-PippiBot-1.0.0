@@ -1,0 +1,1 @@
+Attached files and images fetched from urls will be saved in this folder.

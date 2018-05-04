@@ -17,12 +17,13 @@ var plotly = require('plotly')('zeklewa','sC8bIL6vurb1J24M7zNN');
 var fs = require('fs');
 var request = require('request');
 
+// External functions
 var rqfunc = require('./required');
-//var rqcmd = require();
 
 // Default parameters
 var start_up_time;
 var default_channel = "";
+var cur_prefix = "$";
 
 // Configure logger settings
 logger.remove(logger.transports.Console);
@@ -36,9 +37,9 @@ bot.login(auth.token);
 
 // Actions to take when bot's ready
 bot.on('ready', () => {
-  console.log(`Logged in as ${bot.user.tag}!`);
-  bot.user.setActivity('ur mother $help', { type: 'PLAYING' });
-  start_up_time = new Date();
+    console.log(`Logged in as ${bot.user.tag}!`);
+    bot.user.setActivity('ur mother $help', { type: 'PLAYING' });
+    start_up_time = new Date();
 });
 
 bot.on('message', message => {
@@ -51,8 +52,14 @@ bot.on('message', message => {
     var guild_id = message.guild.id;
     var msg_content = message.content;
 
+    // Update prefix
+    if (db.get('servers').find({'guild_id' : guild_id}).get('prefix').value())
+    {
+        cur_prefix = db.get('servers').find({'guild_id' : guild_id}).get('prefix').value();
+    }
+
     // Global user database
-    if (!(db.get('users').find({ 'id': author_id })).value()){
+    if (!(db.get('users').find({ 'id' : author_id })).value()){
         db.get('users').push({ 'id': author_id, 'name': message.author.username, 'swear_count': 0, 'line_count': 0, 'contribution_points': 0 }).write();
         db.update('usercount', n => n + 1).write();
         //console.log('here');
@@ -66,7 +73,7 @@ bot.on('message', message => {
     }
     else
     {
-        db.get('servers').push({ 'guild_id': guild_id, 'defchan': "", 'banned_words': [], 'uncen': [] }).write();
+        db.get('servers').push({ 'guild_id': guild_id, 'defchan': "", 'banned_words': [], 'uncen': [], 'prefix': "" }).write();
     }
 
     db.get('users').find({ 'id': author_id }).update("line_count", n => n + 1).write();
@@ -206,28 +213,64 @@ bot.on('message', message => {
     // ------------------------------------------------------------------------------------------------------------------------------
 
     // Special bot commands
-    if (msg_content.substring(0, 1) == '$') {
-        var args = msg_content.substring(1).split(' ');
-        var cmd = args[0];
-        var para = "";
+    var args = msg_content.substring(cur_prefix.length).split(' ');
+    var cmd = args[0];
+    var para = "";
 
-        if (args.length > 1)
-        {
-            para = args[1];
-        }        
+    if (args.length > 1)
+    {
+        para = args[1];
+    }        
 
-        args = args.splice(1);
+    args = args.splice(1);
 
-        // If default_channel has not been set, reply to current channel
-        var toChannel = message.channel;
+    // If default_channel has not been set, reply to current channel
+    var toChannel = message.channel;
 
-        if (default_channel){
-            toChannel = default_channel;
-        }
+    if (default_channel){
+        toChannel = default_channel;
+    }
 
-        var log_mess = '*<@' + author_id + '> ';
+    var log_mess = '*<@' + author_id + '> ';
 
+    // Help
+    if (msg_content.substring(0, 5) == "$help")
+    {
+        var mess;
+        mess  = "Pippi Bot v1.0.0 - Zeklewa\n";
+        mess += "Possible commands: `" + cur_prefix + "ping`,`" + cur_prefix + "uptime`,`" + cur_prefix;
+        mess += "defchan`,`" + cur_prefix + "rdimgur`,`" + cur_prefix + "plot`,`" + cur_prefix;
+        mess += "bword`,`" + cur_prefix + "uncen`,`" + cur_prefix + "prefix`.\n";
+        mess += "The current prefix is* `" + cur_prefix + "`.";
+        toChannel.send(log_mess + mess);
+    }
+    // Default prefix settings
+    else if (msg_content.substring(0, cur_prefix.length) == cur_prefix)
+    {
         switch(cmd) {
+            // Change prefix
+            case 'prefix':
+                if (args.length == 0)
+                {
+                    toChannel.send(log_mess + "Usage: $prefix [desired_prefix]. You can use $prefix show to show the default prefix.*");
+                }
+                else
+                {
+                    if (message.member.permissions.has('MANAGE_GUILD') || (author_id == "176963972044423168"))
+                    {
+                        var req_prefix = msg_content.substring(cur_prefix.length);
+                        req_prefix = req_prefix.substr(req_prefix.indexOf(" ") + 1);
+                        db.get('servers').find({'guild_id' : guild_id}).assign({'prefix' : req_prefix}).write();
+                        toChannel.send(log_mess + "The prefix has been set to* `" + req_prefix + "`.");
+                        cur_prefix = req_prefix;
+                    }
+                    else
+                    {
+                        toChannel.send(log_mess + "You are not authorized to change the prefix!*");
+                    }
+                }
+            break;
+
             // uncen stuff
             case 'uncen':
                 if (args.length == 0)
@@ -400,20 +443,15 @@ bot.on('message', message => {
                 }
             break;
 
-            // Help:
-            case 'help':
-                var mess;
-                mess  = "Pippi Bot v1.0.0 - Zeklewa\n";
-                mess += "Possible commands: `$ping`, `$uptime`, `$defchan`, `$rdimgur`, `$plot`, `$bword`, `$uncen`.";
-                toChannel.send(log_mess + mess);
-            break;
-
+            // Banned words
             case 'bword':
                 var cur_bwords = db.get('servers').find({'guild_id' : guild_id}).get('banned_words').value();
                 if ((args.length >= 2) && ((args[0] == 'add') || (args[0] == 'remove')))
                 {
                     var key_word = msg_content.substring(1);
                     key_word = key_word.substr(key_word.indexOf(" ") + 1);
+
+                    // Used to remove "add"/"remove" in string
                     key_word = key_word.substr(key_word.indexOf(" ") + 1);
 
                     //var key_word = args[1];
