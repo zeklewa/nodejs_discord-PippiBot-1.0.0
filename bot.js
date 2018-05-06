@@ -16,6 +16,8 @@ var auth = require('./auth.json');
 var plotly = require('plotly')('zeklewa','sC8bIL6vurb1J24M7zNN');
 var fs = require('fs');
 var request = require('request');
+var ytdl = require('ytdl-core');
+var search = require('youtube-search');
 
 // External functions
 var rqfunc = require('./required');
@@ -24,6 +26,7 @@ var rqfunc = require('./required');
 var start_up_time;
 var default_channel = "";
 var cur_prefix = "$";
+var servers = {}; // Key = server, Value = music queue for that server
 
 // Configure logger settings
 logger.remove(logger.transports.Console);
@@ -31,6 +34,27 @@ logger.add(logger.transports.Console, {
     colorize: true
 });
 logger.level = 'debug';
+
+// Music function
+function play(connection, message, toChannel)
+{
+    var server = servers[message.guild.id];
+
+    toChannel.send("*Now playing:* `" + server.queue[0].title + "`.");
+    server.dispatcher = connection.playStream(ytdl(server.queue[0].link, {filter: 'audioonly'}));
+
+    server.queue.shift();
+
+    server.dispatcher.on("end", function(){
+        if (server.queue[0]) play(connection, message, toChannel);
+        else 
+        {
+            connection.disconnect();
+            toChannel.send('*Queue concluded.*');
+        } 
+    });
+    
+}
 
 // Login with specified token
 bot.login(auth.token);
@@ -240,7 +264,7 @@ bot.on('message', message => {
         mess  = "Pippi Bot v1.0.0 - Zeklewa\n";
         mess += "Possible commands: `" + cur_prefix + "ping`,`" + cur_prefix + "uptime`,`" + cur_prefix;
         mess += "defchan`,`" + cur_prefix + "rdimgur`,`" + cur_prefix + "plot`,`" + cur_prefix;
-        mess += "bword`,`" + cur_prefix + "uncen`,`" + cur_prefix + "prefix`.\n";
+        mess += "bword`,`" + cur_prefix + "uncen`,`" + cur_prefix + "prefix`,`" + cur_prefix + "play`,`" + cur_prefix + "stop`.\n";
         mess += "The current prefix is* `" + cur_prefix + "`.";
         toChannel.send(log_mess + mess);
     }
@@ -302,9 +326,8 @@ bot.on('message', message => {
                                     uncen_channel = queue_channels[iter];
 
                                     if (!uncen_channels.includes(uncen_channel))
-                                    {
-                                        uncen_channels.push(uncen_channel);
-                                    }
+                                        if (message.guild.channels.find("name", uncen_channel))
+                                            uncen_channels.push(uncen_channel);
                                 }
 
                                 db.get('servers').find({'guild_id' : guild_id}).assign({'uncen' : uncen_channels}).write();
@@ -522,6 +545,128 @@ bot.on('message', message => {
                     else toChannel.send(log_mess + "Usage: $bword add [banned_word], $bword remove [banned_word], $bword show.*");
                 }
             break;
+
+            case 'play':
+                // Check if queue exists
+                if (args.length == 0)
+                {
+                    toChannel.send(log_mess + 'Usage: $play [youtube search query]*, $skip to skip the current song, $stop to stop playing and $queue to display the current queue.*');
+                    return;
+                }
+
+                if (!message.member.voiceChannel)
+                {
+                    toChannel.send(log_mess + 'You must be connected to a voice channel!*');
+                    return;
+                }
+
+                if (!servers[message.guild.id])
+                {
+                    servers[message.guild.id] = {queue : []};
+                }
+
+                // Get query
+                var query = msg_content.substring(1);
+                query = query.substr(query.indexOf(" ") + 1);
+
+                var opts = {
+                    maxResults: 5,
+                    key: auth.youtubeAPI
+                };
+ 
+                // Process query here first -> push query to queue
+                search(query, opts, function(err, results) {
+                    // Select first object from search
+                    if (results)
+                    {
+                        var result_song = results[0];
+
+                        // Push to queue
+                        toChannel.send(log_mess + 'The song* `' + result_song.title + '` *has been added to the queue*');
+                        var server = servers[message.guild.id];
+                        server.queue.push(result_song);          
+                            
+                        if (!message.guild.voiceConnection)
+                        {
+                            message.member.voiceChannel.join().then(connection => {
+                                play(connection, message, toChannel);
+                            })
+                        }
+                    }
+                    else
+                    {
+                        toChannel.send(log_mess + "Sorry, I couldn't find anything with that query.*");
+                    }
+                if(err) return console.log(err); });
+            break;
+
+            // Skip current song
+            case 'skip':
+                var server = servers[message.guild.id];
+                if (server.dispatcher) server.dispatcher.end();
+            break;
+
+            // Stop playing
+            case 'stop':
+                var server = servers[message.guild.id];
+                if (message.guild.voiceConnection) 
+                {
+                    bot.voiceConnections.get(guild_id).channel.leave();
+                }
+                else
+                    toChannel.send(log_mess + 'I am not connected to a channel!*');
+            break;
+
+            case 'volume':
+                var server = servers[message.guild.id];
+                if (args.length != 1)
+                {
+                    toChannel.send(log_mess + 'Usage: $volume [desired volume] [0-200](%) (100% being the normal perceived volume)). Use $volume show to display the current volume level.*');
+                    return;
+                } 
+                else
+                {
+                    if (args[0] == 'show')
+                        toChannel.send(log_mess + "The current volume is set at `" + server.dispatcher.volumeLogarithmic*100 + "%`.*");
+                    else if (isNaN(args[0]))
+                        toChannel.send(log_mess + "Please provide a number for the desired volume!*");
+                    else
+                    {
+                        var set_volume = Number(args[0])/100;
+                        if ((set_volume >= 2) || (set_volume <= 0))
+                        {
+                            toChannel.send(log_mess + "Please provide a number within the specified bounds!*");
+                        }
+                        server.dispatcher.setVolumeLogarithmic(set_volume);
+                        toChannel.send(log_mess + 'The volume has been set to* `' + Number(args[0]) + '%`.');
+                        //toChannel.send(log_mess + 'Usage: $volume [desired volume] [0-200](%) (100% being the normal perceived volume). Use $volume show to display the current volume level.*');
+                    }
+                }           
+            break;
+
+            // Add song to queue
+            case 'queue':
+                var server = servers[message.guild.id];
+                if (args.length == 0)
+                {
+                    if (server.queue.length)
+                    {
+                        var string_mess = "*Current songs in the queue:* \n" + "```";
+                        var i;
+                        for (i = 0; i < server.queue.length; i++)
+                        {
+                            string_mess += (i + 1) + ". " + server.queue[i].title + "\n";
+                        }
+                        string_mess += "```";
+                        toChannel.send(string_mess);
+                    }
+                    else
+                    {
+                        toChannel.send("*There are currently no songs in the queue. Use $play [song name] to add one to the queue!*");
+                    }
+                }
+            break;
+
             // Plot
             case 'plot':
                 try {
