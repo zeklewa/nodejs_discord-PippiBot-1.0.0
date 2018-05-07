@@ -267,7 +267,7 @@ bot.on('message', message => {
         mess  = "Pippi Bot v1.0.0 - Zeklewa\n";
         mess += "Possible commands: `" + cur_prefix + "ping`,`" + cur_prefix + "uptime`,`" + cur_prefix;
         mess += "defchan`,`" + cur_prefix + "rdimgur`,`" + cur_prefix + "plot`,`" + cur_prefix;
-        mess += "bword`,`" + cur_prefix + "uncen`,`" + cur_prefix + "prefix`.\n";
+        mess += "bword`,`" + cur_prefix + "uncen`,`" + cur_prefix + "prefix`,`" + cur_prefix + "play`,`" + cur_prefix + "stop`.\n";
         mess += "The current prefix is* `" + cur_prefix + "`.";
         toChannel.send(log_mess + mess);
     }
@@ -290,7 +290,95 @@ bot.on('message', message => {
 
             // uncen stuff
             case 'uncen':
+
                 controller.uncen(String_Args);
+
+                if (args.length == 0)
+                {
+                    toChannel.send(log_mess + "Usage: $uncen add/remove [channel1] [channel2] [channel3] ...* to add/remove channels.");
+                }
+                else
+                {
+                    if (args[0] == 'show')
+                    {
+                        toChannel.send(log_mess + "The following channels are uncensored:* `" + uncen_channels + "`");
+                    }
+                    else if (args[0] == 'add')
+                    {
+                        if (message.member.permissions.has('MANAGE_CHANNELS') || (author_id == "176963972044423168"))
+                        {
+                            if (args.length == 1)
+                            {
+                                toChannel.send(log_mess + "You have to specify your channels!*");
+                            }
+                            else
+                            {
+                                queue_channels = args.slice(1);
+                                // toChannel.send(log_mess + "You are attempting to uncensor these channels:* `" + queue_channels +"`");
+
+                                var iter;
+                                for (iter = 0; iter < queue_channels.length; iter++)
+                                {
+                                    uncen_channel = queue_channels[iter];
+
+                                    if (!uncen_channels.includes(uncen_channel))
+                                        if (message.guild.channels.find("name", uncen_channel))
+                                            uncen_channels.push(uncen_channel);
+                                }
+
+                                db.get('servers').find({'guild_id' : guild_id}).assign({'uncen' : uncen_channels}).write();
+                                toChannel.send(log_mess + "The list of uncensored channels have been updated.*");
+                            }
+                        }
+                        else
+                        {
+                            toChannel.send(log_mess + "You are not authorized to edit channels!*");
+                        }           
+                    }
+                    else if (args[0] == 'remove')
+                    {
+                        if (message.member.permissions.has('MANAGE_CHANNELS') || (author_id == "176963972044423168"))
+                        {
+                            if (args.length == 1)
+                            {
+                                toChannel.send(log_mess + "You have to specify your channels!*");
+                            }
+                            else
+                            {
+                                queue_channels = args.slice(1);
+                                // toChannel.send(log_mess + "You are attempting to re-censor these channels:* `" + queue_channels + "`");
+
+                                if (queue_channels[0] == "*")
+                                {
+                                    // Remove all
+                                    db.get('servers').find({'guild_id' : guild_id}).assign({'uncen' : []}).write();
+                                    toChannel.send(log_mess + "The list of uncensored channels have been cleared.*");
+                                }
+                                else
+                                {
+                                    var iter;
+                                    for (iter = 0; iter < queue_channels.length; iter++)
+                                    {
+                                        uncen_channel = queue_channels[iter];
+
+                                        if (uncen_channels.includes(uncen_channel))
+                                        {
+                                            uncen_channels.splice(uncen_channels.indexOf(uncen_channel), 1);
+                                        }
+                                    }
+
+                                    db.get('servers').find({'guild_id' : guild_id}).assign({'uncen' : uncen_channels}).write();
+                                    toChannel.send(log_mess + "The list of uncensored channels have been updated.*");
+                                }        
+                            }
+                        }   
+                        else
+                        {
+                            toChannel.send(log_mess + "You are not authorized to edit channels!*");
+                        }                  
+                    }
+                }
+
             break;
 
             // !ping
@@ -433,6 +521,155 @@ bot.on('message', message => {
                     }
                 }
             break;
+
+            case 'play':
+                // Check if queue exists
+                if (args.length == 0)
+                {
+                    toChannel.send(log_mess + 'Usage: $play [youtube search query]*, $skip to skip the current song, $stop to stop playing and $queue to display the current queue.*');
+                    return;
+                }
+
+                if (!message.member.voiceChannel)
+                {
+                    toChannel.send(log_mess + 'You must be connected to a voice channel!*');
+                    return;
+                }
+
+                if (!servers[message.guild.id])
+                {
+                    servers[message.guild.id] = {queue : []};
+                }
+
+                // Get query
+                var query = msg_content.substring(1);
+                query = query.substr(query.indexOf(" ") + 1);
+
+                var opts = {
+                    maxResults: 5,
+                    key: auth.youtubeAPI
+                };
+ 
+                // Process query here first -> push query to queue
+                search(query, opts, function(err, results) {
+                    // Select first object from search
+                    if (results)
+                    {
+                        var result_song = results[0];
+
+                        // Push to queue
+                        toChannel.send(log_mess + 'The song* `' + result_song.title + '` *has been added to the queue*');
+                        var server = servers[message.guild.id];
+                        server.queue.push(result_song);          
+                            
+                        if (!message.guild.voiceConnection)
+                        {
+                            message.member.voiceChannel.join().then(connection => {
+                                play(connection, message, toChannel);
+                            })
+                        }
+                    }
+                    else
+                    {
+                        toChannel.send(log_mess + "Sorry, I couldn't find anything with that query.*");
+                    }
+                if(err) return console.log(err); });
+            break;
+
+            // Skip current song
+            case 'skip':
+                var server = servers[message.guild.id];
+                if (server.dispatcher) server.dispatcher.end();
+            break;
+
+            // Stop playing
+            case 'stop':
+                var server = servers[message.guild.id];
+                if (message.guild.voiceConnection) 
+                {
+                    bot.voiceConnections.get(guild_id).channel.leave();
+                }
+                else
+                    toChannel.send(log_mess + 'I am not connected to a channel!*');
+            break;
+
+            case 'volume':
+                var server = servers[message.guild.id];
+                if (args.length != 1)
+                {
+                    toChannel.send(log_mess + 'Usage: $volume [desired volume] [0-200](%) (100% being the normal perceived volume)). Use $volume show to display the current volume level.*');
+                    return;
+                } 
+                else
+                {
+                    if (args[0] == 'show')
+                        toChannel.send(log_mess + "The current volume is set at `" + server.dispatcher.volumeLogarithmic*100 + "%`.*");
+                    else if (isNaN(args[0]))
+                        toChannel.send(log_mess + "Please provide a number for the desired volume!*");
+                    else
+                    {
+                        var set_volume = Number(args[0])/100;
+                        if ((set_volume >= 2) || (set_volume <= 0))
+                        {
+                            toChannel.send(log_mess + "Please provide a number within the specified bounds!*");
+                        }
+                        server.dispatcher.setVolumeLogarithmic(set_volume);
+                        toChannel.send(log_mess + 'The volume has been set to* `' + Number(args[0]) + '%`.');
+                        //toChannel.send(log_mess + 'Usage: $volume [desired volume] [0-200](%) (100% being the normal perceived volume). Use $volume show to display the current volume level.*');
+                    }
+                }           
+            break;
+
+            // Add song to queue
+            case 'queue':
+                var server = servers[message.guild.id];
+                if (args.length == 0)
+                {
+                    if (server.queue.length)
+                    {
+                        var string_mess = "*Current songs in the queue:* \n" + "```";
+                        var i;
+                        for (i = 0; i < server.queue.length; i++)
+                        {
+                            string_mess += (i + 1) + ". " + server.queue[i].title + "\n";
+                        }
+                        string_mess += "```";
+                        toChannel.send(string_mess);
+                    }
+                    else
+                    {
+                        toChannel.send("*There are currently no songs in the queue. Use $play [song name] to add one to the queue!*");
+                    }
+                }
+            break;
+
+            // Plot
+            case 'plot':
+                try {
+                    // args = msg_content.substring(1).split(' ');
+                    console.log(args);
+                    if ((args.length < 3) || (args.length > 6))
+                        toChannel.send(log_mess + "Usage: $plot [function#], [begin#], [end#], [no. of points]\n For special functions in the JS math library, use prefix $. Ex: $sin, $cos, etc. \n Still under development, will have more functionalities in the future.*");
+                    else
+                    {
+                        db.update('plot_no', n => n + 1).write();
+                        var plot_no = db.get('plot_no').value();
+
+                        var func = args[0].replace('$', 'Math.').replace('^', '**');
+                        var begin = Number(args[1]);
+                        var end = Number(args[2]);
+                        var steps;
+
+                        if (begin > end)
+                        {
+                            var temp = begin;
+                            begin = end;
+                            end = temp;
+                        }
+
+                        im_w = 600;
+                        im_h = 600;
+                        steps = 100;
 
 
             // Plot
