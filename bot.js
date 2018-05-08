@@ -2,7 +2,7 @@
 const low = require('lowdb')
 const FileSync = require('lowdb/adapters/FileSync')
 
-const adapter = new FileSync('./db.json')
+const adapter = new FileSync('db.json')
 const db = low(adapter)
 db.defaults({users: [], usercount: 0, servers: [], plot_no: 0}).write();
 
@@ -13,7 +13,7 @@ const bot = new Discord.Client();
 // Prerequisites
 var logger = require('winston');
 var auth = require('./auth.json');
-var global.plotly = require('plotly')('zeklewa','sC8bIL6vurb1J24M7zNN');
+var plotly = require('plotly')('zeklewa','sC8bIL6vurb1J24M7zNN');
 var fs = require('fs');
 var request = require('request');
 var ytdl = require('ytdl-core');
@@ -27,9 +27,6 @@ var start_up_time;
 var default_channel = "";
 var cur_prefix = "$";
 var servers = {}; // Key = server, Value = music queue for that server
-
-//External function
-var controller = require('./custom_modules/controller.js');
 
 // Configure logger settings
 logger.remove(logger.transports.Console);
@@ -247,12 +244,12 @@ bot.on('message', message => {
     if (args.length > 1)
     {
         para = args[1];
-    }      
+    }        
 
     args = args.splice(1);
 
     // If default_channel has not been set, reply to current channel
-    var global.toChannel = message.channel;
+    var toChannel = message.channel;
 
     if (default_channel){
         toChannel = default_channel;
@@ -271,28 +268,35 @@ bot.on('message', message => {
         mess += "The current prefix is* `" + cur_prefix + "`.";
         toChannel.send(log_mess + mess);
     }
-
-    //get the default arguments
-    var String_Args = "";
-    for (int i=0; i<args.length; i++){
-        String_Args = String_Args + args[i];
-        if (i<args.length) String_Args = String_Args + " ";
-    }
-
     // Default prefix settings
     else if (msg_content.substring(0, cur_prefix.length) == cur_prefix)
     {
         switch(cmd) {
             // Change prefix
             case 'prefix':
-                controller.changePrefix(String_Args);
+                if (args.length == 0)
+                {
+                    toChannel.send(log_mess + "Usage: $prefix [desired_prefix]. You can use $prefix show to show the default prefix.*");
+                }
+                else
+                {
+                    if (message.member.permissions.has('MANAGE_GUILD') || (author_id == "176963972044423168"))
+                    {
+                        var req_prefix = msg_content.substring(cur_prefix.length);
+                        req_prefix = req_prefix.substr(req_prefix.indexOf(" ") + 1);
+                        db.get('servers').find({'guild_id' : guild_id}).assign({'prefix' : req_prefix}).write();
+                        toChannel.send(log_mess + "The prefix has been set to* `" + req_prefix + "`.");
+                        cur_prefix = req_prefix;
+                    }
+                    else
+                    {
+                        toChannel.send(log_mess + "You are not authorized to change the prefix!*");
+                    }
+                }
             break;
 
             // uncen stuff
             case 'uncen':
-
-                controller.uncen(String_Args);
-
                 if (args.length == 0)
                 {
                     toChannel.send(log_mess + "Usage: $uncen add/remove [channel1] [channel2] [channel3] ...* to add/remove channels.");
@@ -378,7 +382,6 @@ bot.on('message', message => {
                         }                  
                     }
                 }
-
             break;
 
             // !ping
@@ -388,137 +391,158 @@ bot.on('message', message => {
 
             // Display uptime
             case 'uptime':
-                controller.uptime();
+                var uptime = + new Date() - start_up_time;
+                console.log(uptime);
+                toChannel.send(log_mess + "I have been up for " + rqfunc.timeConverter(uptime) + ". Beep boop.*");
             break;
 
             // Set default channel
             case 'defchan':
-                controller.defchan(String_Args);
+                if (para == "")
+                {
+                    toChannel.send(log_mess + "Usage: $defchan channel_name_here. Use $defchan default to clear the default channel and $defchan show to show the default channel.*");
+                }
+
+                else if (para == "default")
+                {
+                    if ((message.member.permissions.has('MANAGE_CHANNELS')) || (author_id == "176963972044423168"))
+                    {
+                        toChannel.send(log_mess + "Default channel has been cleared.*");
+                        db.get('servers').find({'guild_id': guild_id}).assign({ "defchan": "" }).write();
+                    }
+                    else
+                        toChannel.send(log_mess + "You are not authorized to edit channels!.*")
+                }
+
+                else if (para == "show")
+                {
+                    if (!default_channel)
+                        toChannel.send(log_mess + "No default channel is currently set on this server.*");
+                    else
+                        toChannel.send(log_mess + "The default channel is currently <#" + default_channel.id + ">*");
+                }
+
+                else
+                {
+                    if (message.member.permissions.has('MANAGE_CHANNELS') || (author_id == "176963972044423168"))
+                    {
+                        var channel_found = false;
+                        var mess;
+
+                        found_channel = message.guild.channels.find("name", para);
+
+                        if (found_channel)
+                        {
+                            mess = 'Channel found! Default channel has been set.*';
+                            default_channel = found_channel;
+                            db.get('servers').find({'guild_id': guild_id}).assign({ "defchan": default_channel.id }).write();
+                        }
+
+                        else mess = 'Channel not found. Try again.*';
+                        toChannel.send(log_mess + mess);
+                    }
+                    else
+                        toChannel.send(log_mess + "You are not authorized to edit channels!.*")
+                }
+            break;
+            // Generate random imgur image
+            case 'rdimgur':
+                var iter;
+                var not_found = true;
+
+                for (iter = 0; iter < 20; iter++)
+                {
+                    var imgur_link = rqfunc.genImgur();
+                    if (rqfunc.imageExists(imgur_link)){
+                        toChannel.send(log_mess + imgur_link + "*");
+                        not_found = false;
+                        break;
+                    }
+                }
+
+                if (not_found)
+                {
+                    toChannel.send(log_mess + "Fuck imgur.");
+                }
             break;
 
             // Banned words
             case 'bword':
-                controller.bword(String_Args);
-            break;
-
-            case 'play':
-                // Check if queue exists
-                if (args.length == 0)
+                var cur_bwords = db.get('servers').find({'guild_id' : guild_id}).get('banned_words').value();
+                if ((args.length >= 2) && ((args[0] == 'add') || (args[0] == 'remove')))
                 {
-                    toChannel.send(log_mess + 'Usage: $play [youtube search query]*, $skip to skip the current song, $stop to stop playing and $queue to display the current queue.*');
-                    return;
-                }
+                    var key_word = msg_content.substring(1);
+                    key_word = key_word.substr(key_word.indexOf(" ") + 1);
 
-                if (!message.member.voiceChannel)
-                {
-                    toChannel.send(log_mess + 'You must be connected to a voice channel!*');
-                    return;
-                }
+                    // Used to remove "add"/"remove" in string
+                    key_word = key_word.substr(key_word.indexOf(" ") + 1);
 
-                if (!servers[message.guild.id])
-                {
-                    servers[message.guild.id] = {queue : []};
-                }
+                    //var key_word = args[1];
+                    console.log(key_word);
 
-                // Get query
-                var query = msg_content.substring(1);
-                query = query.substr(query.indexOf(" ") + 1);
-
-                var opts = {
-                    maxResults: 5,
-                    key: auth.youtubeAPI
-                };
- 
-                // Process query here first -> push query to queue
-                search(query, opts, function(err, results) {
-                    // Select first object from search
-                    if (results)
-                    {
-                        var result_song = results[0];
-
-                        // Push to queue
-                        toChannel.send(log_mess + 'The song* `' + result_song.title + '` *has been added to the queue*');
-                        var server = servers[message.guild.id];
-                        server.queue.push(result_song);          
-                            
-                        if (!message.guild.voiceConnection)
-                        {
-                            message.member.voiceChannel.join().then(connection => {
-                                play(connection, message, toChannel);
-                            })
-                        }
-                    }
-                    else
-                    {
-                        toChannel.send(log_mess + "Sorry, I couldn't find anything with that query.*");
-                    }
-                if(err) return console.log(err); });
-            break;
-
-            // Skip current song
-            case 'skip':
-                var server = servers[message.guild.id];
-                if (server.dispatcher) server.dispatcher.end();
-            break;
-
-            // Stop playing
-            case 'stop':
-                var server = servers[message.guild.id];
-                if (message.guild.voiceConnection) 
-                {
-                    bot.voiceConnections.get(guild_id).channel.leave();
-                }
-                else
-                    toChannel.send(log_mess + 'I am not connected to a channel!*');
-            break;
-
-            case 'volume':
-                var server = servers[message.guild.id];
-                if (args.length != 1)
-                {
-                    toChannel.send(log_mess + 'Usage: $volume [desired volume] [0-200](%) (100% being the normal perceived volume)). Use $volume show to display the current volume level.*');
-                    return;
-                } 
-                else
-                {
                     if (args[0] == 'show')
-                        toChannel.send(log_mess + "The current volume is set at `" + server.dispatcher.volumeLogarithmic*100 + "%`.*");
-                    else if (isNaN(args[0]))
-                        toChannel.send(log_mess + "Please provide a number for the desired volume!*");
-                    else
-                    {
-                        var set_volume = Number(args[0])/100;
-                        if ((set_volume >= 2) || (set_volume <= 0))
-                        {
-                            toChannel.send(log_mess + "Please provide a number within the specified bounds!*");
-                        }
-                        server.dispatcher.setVolumeLogarithmic(set_volume);
-                        toChannel.send(log_mess + 'The volume has been set to* `' + Number(args[0]) + '%`.');
-                        //toChannel.send(log_mess + 'Usage: $volume [desired volume] [0-200](%) (100% being the normal perceived volume). Use $volume show to display the current volume level.*');
-                    }
-                }           
-            break;
+                        toChannel.send(log_mess + "`Currently banned words: " + cur_bwords + "`");
+                    // If word exists
 
-            // Add song to queue
-            case 'queue':
-                var server = servers[message.guild.id];
-                if (args.length == 0)
-                {
-                    if (server.queue.length)
+                    if (cur_bwords.includes(key_word))
                     {
-                        var string_mess = "*Current songs in the queue:* \n" + "```";
-                        var i;
-                        for (i = 0; i < server.queue.length; i++)
+                        if (message.member.permissions.has('MANAGE_MESSAGES') || (author_id == "176963972044423168"))
                         {
-                            string_mess += (i + 1) + ". " + server.queue[i].title + "\n";
+                            if (args[0] == 'add')
+                            {
+                                toChannel.send(log_mess + "The word '" + key_word + "' already exists!*");
+                            }
+                            else
+                            {
+                                cur_bwords.splice(cur_bwords.indexOf(key_word), 1);
+                                db.get('servers').find({'guild_id' : guild_id}).assign({'banned_words' : cur_bwords}).write();
+                                toChannel.send(log_mess + "The word '" + key_word + "' has been deleted from the ban list.*");
+                            }
                         }
-                        string_mess += "```";
-                        toChannel.send(string_mess);
-                    }
+                        else
+                            toChannel.send(log_mess + "You are not authorized to edit messages!*");
+                    }   
+                    // If word doesn't exist
                     else
                     {
-                        toChannel.send("*There are currently no songs in the queue. Use $play [song name] to add one to the queue!*");
+                        if (message.member.permissions.has('MANAGE_MESSAGES') || (author_id == "176963972044423168"))
+                        {
+                            if (args[0] == 'add')
+                            {
+                                if (key_word == "*")
+                                {
+                                    toChannel.send(log_mess + "Uh oh, you're not allowed to do that you cheeky bastard.*"); 
+                                }
+                                else
+                                {
+                                    cur_bwords.push(key_word);
+                                    db.get('servers').find({'guild_id' : guild_id}).assign({'banned_words' : cur_bwords}).write();
+                                    toChannel.send(log_mess + "The word '" + key_word + "' has been banned.*"); 
+                                } 
+                            }
+                            else
+                            {
+                                if (key_word == "*")
+                                {
+                                    toChannel.send(log_mess + "The ban list has been cleared.*"); 
+                                    db.get('servers').find({'guild_id' : guild_id}).assign({'banned_words' : []}).write();
+                                }
+                                else
+                                    toChannel.send(log_mess + "The word '" + key_word + "' doesn't exist in the database!*");
+                            }
+                        }
+                        else
+                            toChannel.send(log_mess + "You are not authorized to edit messages!*");
                     }
+                }
+                else
+                {
+                    if ((args.length == 1) && (args[0] == 'show'))
+                    {
+                        toChannel.send(log_mess + "`Currently banned words: " + cur_bwords + "`");
+                    }
+                    // Display all banned words and documentation for bword
+                    else toChannel.send(log_mess + "Usage: $bword add [banned_word], $bword remove [banned_word], $bword show.*");
                 }
             break;
 
@@ -671,10 +695,55 @@ bot.on('message', message => {
                         im_h = 600;
                         steps = 100;
 
+                        if (args.length == 4)
+                        {
+                            steps = Number(args[3]);
+                        }
 
-            // Plot
-            case 'plot':
-                controller.plot(String_Args);
+                        var f = new Function("x", "return " + func);
+
+                        console.log(begin + " " + end + " " + steps);
+
+                        var xs = [];
+                        var ys = [];
+
+                        var k;
+                        for (k = 0; k < steps; k++)
+                        {
+                            x = begin + (end - begin)*k*1.0/steps;
+                            y = f(x);
+                            xs.push(x);
+                            ys.push(y);
+                        }
+
+                        var trace1 = {
+                          x: xs,
+                          y: ys,
+                          type: "scatter"
+                        };
+                         
+                        var figure = { 'data': [trace1] };
+                         
+                        var imgOpts = {
+                            format: 'png',
+                            width: im_w,
+                            height: im_h
+                        };
+                         
+                        var plot_path = 'Plots/' + plot_no +'.png';
+
+                        plotly.getImage(figure, imgOpts, function (error, imageStream) {
+                            if (error) return console.log (error);
+                            var fileStream = fs.createWriteStream(plot_path);
+                            fileStream.on('close', function(){
+                                toChannel.send(log_mess + "Plot created.*", {files: ['Plots/' + plot_no +'.png']});
+                            })
+                            imageStream.pipe(fileStream);
+                        });
+                    }
+                } catch(err) {
+                    toChannel.send(log_mess + "Wrong syntax error!* `" + err + '`');
+                }
             break;
             }
         }
