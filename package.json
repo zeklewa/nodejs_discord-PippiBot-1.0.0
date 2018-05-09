@@ -5,21 +5,22 @@
   "main": "bot.js",
   "author": "Zeklewa",
   "dependencies": {
+    "bufferutil": "^3.0.5",
     "discord.io": "github:woor/discord.io#gateway_v6",
     "discord.js": "^11.3.2",
-    "discord.js-musicbot-addon": "^10.1.4",
     "jquery": "^3.3.1",
     "jsdom": "^11.10.0",
+    "libsodium": "^0.7.3",
     "lowdb": "^1.0.0",
     "opusscript": "0.0.6",
     "plotly": "^1.0.6",
     "rimraf": "^2.6.2",
+    "uws": "^9.148.0",
     "w3c-xmlhttprequest": "^2.1.2",
     "website-scraper": "^3.3.2",
     "winston": "^2.4.2",
     "xmlhttprequest": "^1.8.0",
-    "youtube-dl": "^1.12.2",
     "youtube-search": "^1.1.0",
-    "ytdl": "^0.10.1"
+    "ytdl-core": "^0.20.2"
   }
 }
