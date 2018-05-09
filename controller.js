@@ -5,6 +5,7 @@ var bword = require('./custom_modules/bword.js');
 var plot = require('./custom_modules/plot.js');
 var music = require('./custom_modules/music.js');
 var rdimgur = require('./custom_modules/rdimgur.js');
+var voicerec = require('./custom_modules/voicerec.js');
 
 module.exports = {
 	changePrefix : function(message){
@@ -53,6 +54,10 @@ module.exports = {
 	},
 	rdimgur : function(){
 		rdimgur.rdimgur();
+		return;
+	},
+	voicerec: function(){
+		voicerec.voicerec();
 		return;
 	}
 }

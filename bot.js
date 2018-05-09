@@ -265,6 +265,10 @@ Global.bot.on('message', message => {
 			case 'queue':
 				controller.queue(message);
 			break;
+
+			case 'voicerec':
+				controller.voicerec(message);
+			break;
 			}
 		}
 });
